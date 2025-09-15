@@ -23,4 +23,9 @@ venv/
 *.log
 
 # --- VS Code ---
+.vscode/.DS_Store
+venv/
+.env
+__pycache__/
+*.csv
 .vscode/
