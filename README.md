@@ -1,34 +1,61 @@
 # finance-ml
 
-A practical, end-to-end playground for **financial data collection + ML experiments** in Python.
-The project currently focuses on **building a stock universe (S&P 500)** and **pulling market data via Twelve Data**, and will evolve into a full ML pipeline with feature engineering, modeling, and backtesting. :contentReference[oaicite:1]{index=1}
+This repository contains an extensible Python-based framework for **financial market data ingestion and machine learning research**.
 
-## What this repo is (and isn’t)
-- ✅ A learning + portfolio project showing clean data ingestion, experimentation, and ML workflow in finance
-- ✅ A place to grow toward research-grade evaluation (proper splits, leakage checks, backtests)
-- ❌ Not financial advice, not a production trading system (yet)
+The current implementation focuses on:
+- Construction of a U.S. equity universe (S&P 500 constituents)
+- Retrieval of historical market data via the Twelve Data API
+
+The project is designed to evolve into a reproducible research and experimentation pipeline supporting feature engineering, predictive modeling, and systematic backtesting.
 
 ---
 
-## Current status (v0)
-### Implemented / in progress
-- Build an S&P 500 “universe” list (`build_universe_sp500.py`) :contentReference[oaicite:2]{index=2}
-- Twelve Data API wrapper/utility (`twelvedata.py`) :contentReference[oaicite:3]{index=3}
-- Sandbox / early experiments (`trial.py`) :contentReference[oaicite:4]{index=4}
-- Dependencies defined (`requirements.txt`) :contentReference[oaicite:5]{index=5}
+## Project Scope and Objectives
 
-### Next milestones (planned)
-- Data pipeline (download → cache → clean → store)
-- Feature engineering (returns, volatility, momentum, technical indicators)
-- ML tasks:
-  - **Classification**: next-day direction / regime label
-  - **Regression**: next-day/next-week return prediction
-- Proper evaluation:
-  - time-series splits, walk-forward validation
-  - leakage prevention checks
-- Backtesting & benchmarking:
-  - naive baselines (buy&hold, moving-average crossover)
-  - ML-based strategy vs baselines
-- Reporting:
-  - metrics + charts + experiment tracking
+The primary objectives of this repository are to:
 
+- Provide a structured and reproducible workflow for financial data collection
+- Support rigorous experimentation with machine learning models on time-series financial data
+- Enable systematic comparison of baseline strategies and ML-based approaches
+- Facilitate research into predictive performance, robustness, and evaluation methodology
+
+This repository is intended for **research and portfolio demonstration purposes**. It does not constitute financial advice and is not intended for live trading or production deployment.
+
+---
+
+## Current Status
+
+### Implemented Components
+- S&P 500 universe construction (`build_universe_sp500.py`)
+- Twelve Data API utilities for market data retrieval (`twelvedata.py`)
+- Experimental and prototyping scripts (`trial.py`)
+- Dependency specification (`requirements.txt`)
+
+### Planned Extensions
+
+**Data engineering**
+- Unified data ingestion and storage layer
+- Local persistence of raw and processed datasets (CSV/Parquet)
+- Caching and rate-limit management
+
+**Feature engineering**
+- Return and log-return calculations
+- Rolling volatility and momentum features
+- Technical indicators (e.g., SMA, EMA, RSI, MACD)
+
+**Machine learning**
+- Classification tasks (e.g., short-horizon direction or regime identification)
+- Regression tasks (e.g., short-horizon return forecasting)
+- Baseline models and benchmark predictors
+
+**Evaluation methodology**
+- Time-series cross-validation and walk-forward evaluation
+- Leakage prevention and data-snooping controls
+- Stability and robustness analysis
+
+**Backtesting and performance analysis**
+- Signal-to-portfolio backtesting framework
+- Transaction cost and slippage modeling
+- Risk-adjusted performance metrics (e.g., Sharpe ratio, maximum drawdown)
+
+---
