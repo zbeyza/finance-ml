@@ -216,7 +216,7 @@ def fetch_sma(symbol, interval="1day", window=20, start=None):
     return df[["datetime", "symbol", f"sma_{window}"]]  
 
 
-def fetc_ema(symbol, interval="1day", window=12, start=None):
+def fetch_ema(symbol, interval="1day", window=12, start=None):
     """
     fetch exponential moving average (ema) time series and rename it to ema_{window}
     default window is 12 (common setting)
@@ -262,3 +262,66 @@ def list_symbols(exchange=None, country=None, search=None, head=20):
 ###############################
 # merge util
 ###############################    
+def merge_on_datetime(base_df, extra_df):
+    """
+    Left-join an indicator DataFrame onto the base OHLCV panel
+    on ['datetime', 'symbol'].
+    """
+    if base_df is None or extra_df is None:
+        return base_df
+    return pd.merge(base_df, extra_df, on=["datetime", "symbol"], how="left")
+
+###############################
+# main for testing
+###############################
+def main():
+    check_key()
+
+    print("Starting data fetch...")
+
+    parser = argparse.ArgumentParser(description="Fetch enriched market data from Twelve Data")
+    parser.add_argument("--symbols", type=str, default="NVDA")
+    parser.add_argument("--start", type=str, default="2023-01-01")
+    parser.add_argument("--interval", type=str, default="1day")
+    parser.add_argument("--rsi", action="store_true")
+    parser.add_argument("--macd", action="store_true")
+    parser.add_argument("--sma", type=int, default=20)
+    parser.add_argument("--ema", type=int, default=12)
+    parser.add_argument("--out_panel", type=str, default="panel_enriched.csv")
+
+    args = parser.parse_args()
+
+    symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+
+    # 1) Fetch OHLCV
+    panel = fetch_time_series(symbols, start=args.start, interval=args.interval)
+    print("Fetched OHLCV:", panel.shape)
+
+    # 2) Fetch indicators + merge
+    for sym in symbols:
+        if args.rsi:
+            rsi_df = fetch_rsi(sym, interval=args.interval, start=args.start)
+            panel = merge_on_datetime(panel, rsi_df)
+
+        if args.macd:
+            macd_df = fetch_macd(sym, interval=args.interval, start=args.start)
+            panel = merge_on_datetime(panel, macd_df)
+
+        if args.sma and args.sma > 0:
+            sma_df = fetch_sma(sym, interval=args.interval, window=args.sma, start=args.start)
+            panel = merge_on_datetime(panel, sma_df)
+
+        if args.ema and args.ema > 0:
+            ema_df = fetch_ema(sym, interval=args.interval, window=args.ema, start=args.start)
+            panel = merge_on_datetime(panel, ema_df)
+
+    # 3) Save CSV
+    panel = panel.sort_values(["symbol", "datetime"]).reset_index(drop=True)
+    panel.to_csv(args.out_panel, index=False)
+
+    print(f"Saved {args.out_panel} with shape={panel.shape}")
+    print("Done!")
+
+    
+if __name__ == "__main__":
+    main()  
