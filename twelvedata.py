@@ -27,7 +27,7 @@ def check_key():
     if not API_KEY:
         raise RuntimeError("API key not set. Please set TD_API_KEY in .env file.")
     
-def td_get(url, params, sleep=0.8):
+def td_get(url, params, sleep=0.8, max_retries=5, backoff_base=5, stop_on_daily_limit=True):
     """
     Generic GET wrapper:
     - adds aPI key to params
@@ -36,15 +36,28 @@ def td_get(url, params, sleep=0.8):
     """
     p = dict(params or {})
     p["apikey"] = API_KEY
-    r = requests.get(url, params=p, timeout=30)
-    try:
-        data = r.json()
-    except Exception:
-        # if json parsin fails, raise for satus to expose HTTP error then still return an empty dict
-        r.raise_for_status()
-        data ={}
-    if sleep:
-        time.sleep(sleep)
+    for attempt in range(max_retries + 1):
+        if os.getenv("TD_STOP_FILE") and os.path.exists(os.getenv("TD_STOP_FILE")):
+            raise RuntimeError("stop file detected; aborting request loop")
+        r = requests.get(url, params=p, timeout=30)
+        try:
+            data = r.json()
+        except Exception:
+            # if json parsin fails, raise for satus to expose HTTP error then still return an empty dict
+            r.raise_for_status()
+            data = {}
+        if isinstance(data, dict) and data.get("status") == "error" and data.get("code") == 429:
+            msg = str(data.get("message", "")).lower()
+            if stop_on_daily_limit and "day" in msg:
+                # Daily limit won't clear within the run; return immediately.
+                return data
+            wait_s = backoff_base * (attempt + 1)
+            print(f"[rate_limit] 429 received, sleeping {wait_s}s before retry")
+            time.sleep(wait_s)
+            continue
+        if sleep:
+            time.sleep(sleep)
+        return data
     return data
 
 def cast_ohlcv(df):
@@ -63,7 +76,7 @@ def cast_ohlcv(df):
 # Core fetchers
 ##############################
 
-def fetch_time_series(symbols, start, end=None, interval="1day"):
+def fetch_time_series(symbols, start, end=None, interval="1day", sleep=0.8):
     """
     batch fetch OHLCV time series for oe or multiple symblos. 
     
@@ -90,7 +103,10 @@ def fetch_time_series(symbols, start, end=None, interval="1day"):
         params["end_date"] = end
 
     #send request
-    data = td_get(BASE_TS, params)
+    data = td_get(BASE_TS, params, sleep=sleep)
+    if isinstance(data, dict) and data.get("status") == "error":
+        print(f"[time_series] api error: {data}")
+        return pd.DataFrame()
 
     frames = [] 
     # case 1: api collapses rto single symbol response with values
@@ -118,7 +134,9 @@ def fetch_time_series(symbols, start, end=None, interval="1day"):
         raise RuntimeError(f"unexpected response: {data}")  
     
     if not frames:
-        raise RuntimeError("no time series returned for requested sysmbols.")
+        #raise RuntimeError("no time series returned for requested sysmbols.")
+        # Return empty DataFrame so callers can decide how to handle no-data batches.
+        return pd.DataFrame()
     
     # concatenate and sort by time/symbol for clean panel
     panel = pd.concat(frames, ignore_index=True).sort_values(["datetime", "symbol"])
@@ -271,6 +289,22 @@ def merge_on_datetime(base_df, extra_df):
         return base_df
     return pd.merge(base_df, extra_df, on=["datetime", "symbol"], how="left")
 
+def load_symbols_from_csv(path, column="symbol"):
+    """
+    Load symbols from a CSV file (default column name: symbol).
+    Drops blanks and de-duplicates while preserving order.
+    """
+    df = pd.read_csv(path)
+    if column not in df.columns:
+        raise ValueError(f"column '{column}' not found in {path}")
+    symbols = df[column].astype(str).tolist()
+    symbols = [s.strip() for s in symbols if s and s.strip()]
+    return list(dict.fromkeys(symbols))
+
+def chunked(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
 ###############################
 # main for testing
 ###############################
@@ -281,6 +315,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="Fetch enriched market data from Twelve Data")
     parser.add_argument("--symbols", type=str, default="NVDA")
+    parser.add_argument("--symbols_csv", type=str, default="")
+    parser.add_argument("--symbols_col", type=str, default="symbol")
     parser.add_argument("--start", type=str, default="2023-01-01")
     parser.add_argument("--interval", type=str, default="1day")
     parser.add_argument("--rsi", action="store_true")
@@ -288,14 +324,34 @@ def main():
     parser.add_argument("--sma", type=int, default=20)
     parser.add_argument("--ema", type=int, default=12)
     parser.add_argument("--out_panel", type=str, default="panel_enriched.csv")
+    parser.add_argument("--batch_size", type=int, default=50)
+    parser.add_argument("--sleep", type=float, default=8.0)
+    parser.add_argument("--stop_file", type=str, default="")
 
     args = parser.parse_args()
 
-    symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+    if args.stop_file:
+        os.environ["TD_STOP_FILE"] = args.stop_file
 
-    # 1) Fetch OHLCV
-    panel = fetch_time_series(symbols, start=args.start, interval=args.interval)
-    print("Fetched OHLCV:", panel.shape)
+    if args.symbols_csv:
+        symbols = load_symbols_from_csv(args.symbols_csv, column=args.symbols_col)
+    else:
+        symbols = [s.strip() for s in args.symbols.split(",") if s.strip()]
+
+    # 1) Fetch OHLCV (batch to avoid API limits)
+    panels = []
+    for batch in chunked(symbols, args.batch_size):
+        if args.stop_file and os.path.exists(args.stop_file):
+            raise RuntimeError("stop file detected; aborting batch fetch")
+        batch_panel = fetch_time_series(batch, start=args.start, interval=args.interval, sleep=args.sleep)
+        if batch_panel is None or batch_panel.empty:
+            print(f"Fetched OHLCV batch ({len(batch)} symbols): no data")
+            continue
+        panels.append(batch_panel)
+        print(f"Fetched OHLCV batch ({len(batch)} symbols):", batch_panel.shape)
+    if not panels:
+        raise RuntimeError("no time series returned for any symbols.")
+    panel = pd.concat(panels, ignore_index=True)
 
     # 2) Fetch indicators + merge
     for sym in symbols:
@@ -324,4 +380,4 @@ def main():
 
     
 if __name__ == "__main__":
-    main()  
+    main()
