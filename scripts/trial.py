@@ -30,8 +30,8 @@ if "values" in data:
                     "close": float, 
                     "volume": int})
     print(df.head())
-    df.to_csv("nvidia.csv", index=False)
+    os.makedirs("data", exist_ok=True)
+    df.to_csv("data/nvidia.csv", index=False)
     print("Data saved to csv")
 else:
     print("Error:", data)
-

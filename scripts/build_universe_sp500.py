@@ -1,4 +1,5 @@
 import argparse # CLI argument parser
+import os
 from html.parser import HTMLParser # HTML parser for parsing the wikipedia sp500 table
 import requests # HTTP requests for wikipedia page fetching 
 import pandas as pd
@@ -138,11 +139,15 @@ def write_table_csv(table, out_path):
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch current S&P 500 constituents.")  # CLI
-    parser.add_argument("--symbols-out", default="universe_sp500.csv", help="Symbols CSV output path.")
-    parser.add_argument("--info-out", default="sp500_info.csv", help="Full table CSV output path.")
+    parser.add_argument("--symbols-out", default="data/universe_sp500.csv", help="Symbols CSV output path.")
+    parser.add_argument("--info-out", default="data/sp500_info.csv", help="Full table CSV output path.")
     parser.add_argument("--normalize", default="none", choices=["none", "yahoo"])  # normalize mode
     args = parser.parse_args()  # parse CLI args
 
+    for path in (args.symbols_out, args.info_out):
+        out_dir = os.path.dirname(path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
     table = fetch_sp500_table()  # fetch full table
     symbols = fetch_sp500_symbols(normalize=args.normalize)  # fetch symbols
     write_symbols_csv(symbols, args.symbols_out)  # write symbols CSV
@@ -153,5 +158,3 @@ if __name__ == "__main__":
     main()  # run CLI entrypoint
 
         
-
-

@@ -323,7 +323,7 @@ def main():
     parser.add_argument("--macd", action="store_true")
     parser.add_argument("--sma", type=int, default=20)
     parser.add_argument("--ema", type=int, default=12)
-    parser.add_argument("--out_panel", type=str, default="panel_enriched.csv")
+    parser.add_argument("--out_panel", type=str, default="data/panel_enriched.csv")
     parser.add_argument("--batch_size", type=int, default=50)
     parser.add_argument("--sleep", type=float, default=8.0)
     parser.add_argument("--stop_file", type=str, default="")
@@ -373,6 +373,9 @@ def main():
 
     # 3) Save CSV
     panel = panel.sort_values(["symbol", "datetime"]).reset_index(drop=True)
+    out_dir = os.path.dirname(args.out_panel)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     panel.to_csv(args.out_panel, index=False)
 
     print(f"Saved {args.out_panel} with shape={panel.shape}")
