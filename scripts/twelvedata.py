@@ -27,6 +27,14 @@ def check_key():
     if not API_KEY:
         raise RuntimeError("API key not set. Please set TD_API_KEY in .env file.")
     
+def _is_credit_exhausted(payload):
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("status") != "error":
+        return False
+    msg = str(payload.get("message", "")).lower()
+    return "credit" in msg or "credits" in msg or "quota" in msg or "limit" in msg
+
 def td_get(url, params, sleep=0.8, max_retries=5, backoff_base=5, stop_on_daily_limit=True):
     """
     Generic GET wrapper:
@@ -46,6 +54,8 @@ def td_get(url, params, sleep=0.8, max_retries=5, backoff_base=5, stop_on_daily_
             # if json parsin fails, raise for satus to expose HTTP error then still return an empty dict
             r.raise_for_status()
             data = {}
+        if _is_credit_exhausted(data):
+            raise RuntimeError(f"api credits exhausted: {data}")
         if isinstance(data, dict) and data.get("status") == "error" and data.get("code") == 429:
             msg = str(data.get("message", "")).lower()
             if stop_on_daily_limit and "day" in msg:
