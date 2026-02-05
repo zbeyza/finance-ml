@@ -10,6 +10,22 @@ The project is designed to evolve into a reproducible research and experimentati
 
 ---
 
+## Project Structure
+
+```
+.
+├── data/            # datasets and outputs (CSVs)
+├── scripts/
+│   ├── build_universe_sp500.py
+│   ├── twelvedata.py
+│   └── trial.py
+├── README.md
+├── requirements.txt
+└── LICENSE
+```
+
+---
+
 ## Project Scope and Objectives
 
 The primary objectives of this repository are to:
@@ -26,9 +42,9 @@ This repository is intended for **research and portfolio demonstration purposes*
 ## Current Status
 
 ### Implemented Components
-- S&P 500 universe construction (`build_universe_sp500.py`)
-- Twelve Data API utilities for market data retrieval (`twelvedata.py`)
-- Experimental and prototyping scripts (`trial.py`)
+- S&P 500 universe construction (`scripts/build_universe_sp500.py`)
+- Twelve Data API utilities for market data retrieval (`scripts/twelvedata.py`)
+- Experimental and prototyping scripts (`scripts/trial.py`)
 - Dependency specification (`requirements.txt`)
 
 ### Planned Extensions
