@@ -54,10 +54,14 @@ def td_get(url, params, sleep=0.8, max_retries=5, backoff_base=5, stop_on_daily_
             # if json parsin fails, raise for satus to expose HTTP error then still return an empty dict
             r.raise_for_status()
             data = {}
-        if _is_credit_exhausted(data):
-            raise RuntimeError(f"api credits exhausted: {data}")
         if isinstance(data, dict) and data.get("status") == "error" and data.get("code") == 429:
             msg = str(data.get("message", "")).lower()
+            if "minute" in msg:
+                # Minute-level credit limit: wait for the next minute window.
+                wait_s = max(60, backoff_base * (attempt + 1))
+                print(f"[rate_limit] minute limit hit, sleeping {wait_s}s before retry")
+                time.sleep(wait_s)
+                continue
             if stop_on_daily_limit and "day" in msg:
                 # Daily limit won't clear within the run; return immediately.
                 return data
@@ -65,6 +69,8 @@ def td_get(url, params, sleep=0.8, max_retries=5, backoff_base=5, stop_on_daily_
             print(f"[rate_limit] 429 received, sleeping {wait_s}s before retry")
             time.sleep(wait_s)
             continue
+        if _is_credit_exhausted(data):
+            raise RuntimeError(f"api credits exhausted: {data}")
         if sleep:
             time.sleep(sleep)
         return data
@@ -331,8 +337,8 @@ def main():
     parser.add_argument("--interval", type=str, default="1day")
     parser.add_argument("--rsi", action="store_true")
     parser.add_argument("--macd", action="store_true")
-    parser.add_argument("--sma", type=int, default=20)
-    parser.add_argument("--ema", type=int, default=12)
+    parser.add_argument("--sma", type=int, default=0)
+    parser.add_argument("--ema", type=int, default=0)
     parser.add_argument("--out_panel", type=str, default="data/panel_enriched.csv")
     parser.add_argument("--batch_size", type=int, default=50)
     parser.add_argument("--sleep", type=float, default=8.0)
@@ -350,6 +356,8 @@ def main():
 
     # 1) Fetch OHLCV (batch to avoid API limits)
     panels = []
+    needs_indicators = any([args.rsi, args.macd, (args.sma and args.sma > 0), (args.ema and args.ema > 0)])
+    wrote_header = False
     for batch in chunked(symbols, args.batch_size):
         if args.stop_file and os.path.exists(args.stop_file):
             raise RuntimeError("stop file detected; aborting batch fetch")
@@ -357,11 +365,27 @@ def main():
         if batch_panel is None or batch_panel.empty:
             print(f"Fetched OHLCV batch ({len(batch)} symbols): no data")
             continue
-        panels.append(batch_panel)
+        if needs_indicators:
+            panels.append(batch_panel)
+        else:
+            # Save each batch immediately to avoid losing data on limits/interruption.
+            out_dir = os.path.dirname(args.out_panel)
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+            mode = "w" if not wrote_header else "a"
+            batch_panel.to_csv(args.out_panel, index=False, mode=mode, header=not wrote_header)
+            wrote_header = True
         print(f"Fetched OHLCV batch ({len(batch)} symbols):", batch_panel.shape)
-    if not panels:
-        raise RuntimeError("no time series returned for any symbols.")
-    panel = pd.concat(panels, ignore_index=True)
+    if needs_indicators:
+        if not panels:
+            raise RuntimeError("no time series returned for any symbols.")
+        panel = pd.concat(panels, ignore_index=True)
+    else:
+        if not wrote_header:
+            raise RuntimeError("no time series returned for any symbols.")
+        print(f"Saved {args.out_panel} with per-batch writes")
+        print("Done!")
+        return
 
     # 2) Fetch indicators + merge
     for sym in symbols:
@@ -381,7 +405,7 @@ def main():
             ema_df = fetch_ema(sym, interval=args.interval, window=args.ema, start=args.start)
             panel = merge_on_datetime(panel, ema_df)
 
-    # 3) Save CSV
+    # 3) Save CSV (indicators path)
     panel = panel.sort_values(["symbol", "datetime"]).reset_index(drop=True)
     out_dir = os.path.dirname(args.out_panel)
     if out_dir:
